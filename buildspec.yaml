@@ -1,0 +1,65 @@
+
+version: 0.2
+env:
+  parameter-store:
+    GITHUB_USERNAME: /secrets/cicd/github/username
+    GITHUB_TOKEN: /secrets/cicd/github/token
+    SONAR_TOKEN: /secrets/cicd/sonar/token
+    GITHUB_SHARED_LIB_USERNAME: /secrets/cicd/github/shared-lib/username
+    GITHUB_SHARED_LIB_TOKEN: /secrets/cicd/github/shared-lib/token
+phases:
+  install:
+    commands:
+      - echo Installing yq
+      - wget -q https://github.com/mikefarah/yq/releases/download/v4.30.8/yq_linux_amd64.tar.gz -O - | tar xz && mv yq_linux_amd64 /usr/local/bin/
+  pre_build:
+    commands:
+       - COMMIT_ID=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-7)
+       - PLATFORM_MAJOR_VERSION=$(aws ssm get-parameter --name $PLATFORM_MAJOR_PARAMETER_NAME --query Parameter.Value --output text)
+       - MICROSERVICE_CURRENT_MINOR_VERSION=$(aws ssm get-parameter --name $MICROSERVICE_MINOR_PARAMETER_NAME --query Parameter.Value --output text)
+       - MICROSERVICE_NEW_MINOR_VERSION=$(sed -n '/<version>/ {N;s/.*<version>\([^<]*\)<\/version>.*/\1/p;q;}' pom.xml)
+       - MICROSERVICE_CURRENT_PATCH_VERSION=$(aws ssm get-parameter --name $MICROSERVICE_PATCH_PARAMETER_NAME --query Parameter.Value --output text)
+
+        # Check if minor versions are different and set new patch version accordingly
+       - |
+         if [ "$MICROSERVICE_CURRENT_MINOR_VERSION" != "$MICROSERVICE_NEW_MINOR_VERSION" ]; then
+           MICROSERVICE_NEW_PATCH_VERSION=0;
+           aws ssm put-parameter --name $MICROSERVICE_MINOR_PARAMETER_NAME --value $MICROSERVICE_NEW_MINOR_VERSION --overwrite
+           aws ssm put-parameter --name $MICROSERVICE_PATCH_PARAMETER_NAME --value 0 --overwrite
+         else
+           MICROSERVICE_NEW_PATCH_VERSION=$((MICROSERVICE_CURRENT_PATCH_VERSION + 1));
+           aws ssm put-parameter --name $MICROSERVICE_PATCH_PARAMETER_NAME --value $MICROSERVICE_NEW_PATCH_VERSION --overwrite
+         fi
+         
+       - VERSION=$PLATFORM_MAJOR_VERSION.$MICROSERVICE_NEW_MINOR_VERSION.$MICROSERVICE_NEW_PATCH_VERSION-$COMMIT_ID
+       - RELEASE_VERSION=$PLATFORM_MAJOR_VERSION.$MICROSERVICE_NEW_MINOR_VERSION.$MICROSERVICE_NEW_PATCH_VERSION
+       - envsubst < settings.default.xml | tee settings.xml ~/.m2/settings.xml > /dev/null
+       - mvn test
+  build:
+    on-failure: ABORT
+    commands:
+      - echo Logging in to Amazon ECR...
+      - echo Building the Docker image...
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+      - docker build . --build-arg SERVICE_NAME=$SERVICE_NAME --build-arg ARTIFACT_VERSION=$VERSION -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$SERVICE_NAME:$VERSION -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$SERVICE_NAME:$RELEASE_VERSION
+      - |
+        mvn verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+        -Dsonar.projectKey=${SONAR_PROJECT} \
+        -Dsonar.organization=${SONAR_ORGANIZATION} \
+        -Dsonar.projectBaseDir=src/ \
+        -Dsonar.host.url=https://sonarcloud.io \
+        -Dsonar.coverage.exclusions=src/main/kotlin/com/vivosense/actigraph_converter_service/repository/*,src/main/kotlin/com/vivosense/actigraph_converter_service/retrofit/*
+        
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$SERVICE_NAME:$VERSION
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$SERVICE_NAME:$RELEASE_VERSION
+      - aws ssm put-parameter --name $VERSION_PARAMETER_NAME --value $VERSION --overwrite
+  post_build:
+    commands:
+      - echo Updating github tag ...
+      - git clone https://$GITHUB_USERNAME:$GITHUB_TOKEN@github.com/VivoSense/$GITHUB_REPO.git
+      - cd $GITHUB_REPO
+      - git config --global user.email "FalconSysUser@vivosense.com"
+      - git config --global user.name "CodeBuild"
+      - git tag $VERSION
+      - git push origin $VERSION
+      
