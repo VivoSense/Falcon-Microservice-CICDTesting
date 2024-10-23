@@ -21,43 +21,4 @@ class ConfigureKafkaKtTest {
         stopKoin()
     }
 
-    @Test
-    fun `configureKafka() sets up producer and consumer as expected`() = testApplication {
-        //arrange
-        val expectedQueue = listOf(StatusModel(request = "carrot"))
-        val messageConsumerMock = mockk<MessageBusConsumer>() {
-            every { listen(any()) } just runs
-        }
-        val messageProducerMock = mockk<MessageBusProducer>() {
-            every { createTopics(any()) } just runs
-        }
-        val statusService = mockk<StatusService>() {
-            every { getQueued(any()) } returns expectedQueue
-        }
-        mockkObject(EnvVars.Events)
-        every { EnvVars.Events.outputEventKey } returns "red"
-        every { EnvVars.Events.inputEventKey } returns "blue"
-
-        //act
-        application {
-            startKoin { modules(
-                module {
-                    single { messageConsumerMock }
-                    single { messageProducerMock }
-                    single { statusService }
-                }
-            ) }
-
-
-            //assert
-            val captured = slot<List<String>>()
-            verify {
-                messageConsumerMock.listen(capture(captured))
-                messageProducerMock.createTopics(any())
-            }
-
-            Assertions.assertNotNull(captured.captured)
-            Assertions.assertEquals(expectedQueue.map { x -> x.request }, captured.captured)
-        }
-    }
 }

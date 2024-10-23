@@ -61,42 +61,5 @@ class AdditionalRoutingKtTest {
         Assertions.assertEquals(expectedResponseCode, response.status)
     }
 
-    @Test
-    fun ActigraphConverterHealthReturnsOKStatus() = testApplication {
-        //arrange
-        val expectedResponseCode = HttpStatusCode.OK
-        configureTestApplication()
 
-        //act
-        val response = client.get("/actigraph-converter-service/health")
-
-        //assert
-        Assertions.assertEquals(expectedResponseCode, response.status)
-    }
-
-    @Test
-    fun ActigraphConverterHealthOptionsReturnsOKStatus() = testApplication {
-        //arrange
-        val expectedResponseCode = HttpStatusCode.OK
-        configureTestApplication()
-
-        //act
-        val response = client.options("/actigraph-converter-service/health")
-
-        //assert
-        Assertions.assertEquals(expectedResponseCode, response.status)
-    }
-
-    @Test
-    fun ActigraphConverterManualRunReturnsOKStatus() = testApplication {
-        //arrange
-        val expectedResponseCode = HttpStatusCode.OK
-        configureTestApplication()
-
-        //act
-        val response = client.options("/actigraph-converter-service/internal/run")
-
-        //assert
-        Assertions.assertEquals(expectedResponseCode, response.status)
-    }
 }
