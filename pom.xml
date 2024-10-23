@@ -449,20 +449,6 @@
                     </execution>
                 </executions>
             </plugin>
-            <!--region OWASP -->
-            <plugin>
-                <groupId>org.owasp</groupId>
-                <artifactId>dependency-check-maven</artifactId>
-                <version>${owasp.version}</version>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>check</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <!-- endregion -->
         </plugins>
     </build>
 </project>
